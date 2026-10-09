@@ -20,11 +20,6 @@ const ALLOWED_HOSTS = (process.env.ALLOWED_HOSTS || 'api.ecoledirecte.com')
 const CACHE_MS = 10 * 60 * 1000;
 const MAX_PEOPLE = 50;
 
-// Fenêtre dans laquelle on cherche la pause midi (minutes depuis minuit)
-const LUNCH_FROM = 11 * 60;
-const LUNCH_TO = 14 * 60 + 30;
-const LUNCH_MIN = 20;
-
 /* ------------------------------ stockage ------------------------------ */
 
 let people = [];
@@ -142,43 +137,7 @@ async function getEvents(person) {
   }
 }
 
-/* ------------------------------ pause midi ------------------------------ */
-
-const toMin = (iso) => Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
 const dateOf = (iso) => iso.slice(0, 10);
-
-function lunchFor(events, date) {
-  const day = events.filter((e) => dateOf(e.start) === date && !e.cancelled && !e.allDay);
-  if (!day.length) return { status: 'none' };
-
-  const busy = day
-    .map((e) => ({ s: toMin(e.start), e: Math.max(toMin(e.end), toMin(e.start)) }))
-    .sort((a, b) => a.s - b.s);
-
-  // plus long trou libre dans la fenêtre du midi
-  let cursor = LUNCH_FROM;
-  let best = null;
-  const consider = (s, e) => {
-    if (e - s >= LUNCH_MIN && (!best || e - s > best.e - best.s)) best = { s, e };
-  };
-  for (const b of busy) {
-    if (b.e <= LUNCH_FROM) continue;
-    if (b.s >= LUNCH_TO) break;
-    if (b.s > cursor) consider(cursor, Math.min(b.s, LUNCH_TO));
-    cursor = Math.max(cursor, b.e);
-  }
-  if (cursor < LUNCH_TO) consider(cursor, LUNCH_TO);
-  if (!best) return { status: 'nobreak' };
-
-  const brief = (e) => ({ summary: e.summary, location: e.location, start: toMin(e.start), end: toMin(e.end) });
-  const beforeList = day.filter((e) => toMin(e.end) <= best.s).sort((a, b) => toMin(b.end) - toMin(a.end));
-  const afterList = day.filter((e) => toMin(e.start) >= best.e).sort((a, b) => toMin(a.start) - toMin(b.start));
-  const before = beforeList[0] ? brief(beforeList[0]) : null;
-  const after = afterList[0] ? brief(afterList[0]) : null;
-
-  const status = before && after ? 'break' : before ? 'finished' : 'later';
-  return { status, start: best.s, end: best.e, before, after };
-}
 
 /* ------------------------------ HTTP ------------------------------ */
 
@@ -217,17 +176,6 @@ const sameToken = (a, b) => {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const publicPerson = (p) => ({ id: p.id, name: p.name });
-
-function daysBetween(from, to) {
-  const out = [];
-  const d = new Date(from + 'T12:00:00Z');
-  const end = new Date(to + 'T12:00:00Z');
-  while (d <= end && out.length < 31) {
-    out.push(d.toISOString().slice(0, 10));
-    d.setUTCDate(d.getUTCDate() + 1);
-  }
-  return out;
-}
 
 async function handleApi(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api', ...]
@@ -282,27 +230,7 @@ async function handleApi(req, res, url) {
     if (!DATE_RE.test(from || '') || !DATE_RE.test(to || '')) return send(res, 400, { error: 'Dates invalides.' });
     const all = await getEvents(person);
     const events = all.filter((e) => dateOf(e.start) >= from && dateOf(e.start) <= to);
-    const lunch = {};
-    for (const d of daysBetween(from, to)) lunch[d] = lunchFor(all, d);
-    return send(res, 200, { person: publicPerson(person), events, lunch });
-  }
-
-  // GET /api/lunch?date=YYYY-MM-DD   -> pause midi de tout le monde
-  if (req.method === 'GET' && parts[1] === 'lunch' && parts.length === 2) {
-    const date = url.searchParams.get('date');
-    if (!DATE_RE.test(date || '')) return send(res, 400, { error: 'Date invalide.' });
-    const out = await Promise.all(people.map(async (p) => {
-      try {
-        const all = await getEvents(p);
-        const events = all
-          .filter((e) => dateOf(e.start) === date && !e.cancelled && !e.allDay)
-          .map((e) => ({ summary: e.summary, location: e.location, start: toMin(e.start), end: toMin(e.end) }));
-        return { ...publicPerson(p), lunch: lunchFor(all, date), events };
-      } catch (e) {
-        return { ...publicPerson(p), error: e.message };
-      }
-    }));
-    return send(res, 200, out);
+    return send(res, 200, { person: publicPerson(person), events });
   }
 
   return send(res, 404, { error: 'Route inconnue.' });
