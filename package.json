@@ -1,0 +1,8 @@
+{
+  "name": "edt-commun",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Voir l'emploi du temps EcoleDirecte de ses potes (liens iCal) et leur pause midi",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}

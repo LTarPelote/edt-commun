@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EDT commun</title>
+<style>
+  :root {
+    --bg: #f6f7fb; --card: #ffffff; --text: #1c2030; --muted: #6a7088; --line: #e3e6f0;
+    --accent: #4f46e5; --accent-text: #ffffff; --lunch: #fff4d6; --lunch-line: #f0c75a;
+    --now: #e8f7ee; --now-line: #3bb273; --cancel: #b3261e; --chip: #eceefa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12141c; --card: #1b1e29; --text: #e8eaf4; --muted: #9096ae; --line: #2b3042;
+      --accent: #7c74ff; --accent-text: #10121a; --lunch: #3a3217; --lunch-line: #8a6d1a;
+      --now: #16342a; --now-line: #3bb273; --cancel: #ff8a80; --chip: #262a3b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.4rem; margin: 4px 0 12px; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .chip { border: 1px solid var(--line); background: var(--chip); border-radius: 999px;
+          padding: 8px 16px; }
+  .chip.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  .chip.add { border-style: dashed; background: transparent; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .tabs, .nav { display: flex; gap: 6px; }
+  .tab, .nav button { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 7px 12px; }
+  .tab.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .nav .date { padding: 7px 10px; font-weight: 600; text-transform: capitalize; align-self: center; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+  .week { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .card h2 { font-size: 1rem; margin: 0 0 8px; text-transform: capitalize; }
+  .ev { display: grid; grid-template-columns: 92px 1fr; gap: 10px; padding: 8px; border-radius: 10px;
+        border: 1px solid transparent; }
+  .ev + .ev, .ev + .lunch, .lunch + .ev { margin-top: 6px; }
+  .ev .time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .9rem; }
+  .ev .title { font-weight: 600; }
+  .ev .room { display: inline-block; background: var(--chip); border-radius: 6px; padding: 1px 8px; font-size: .85rem; margin-top: 3px; }
+  .ev .desc { color: var(--muted); font-size: .85rem; margin-top: 3px; white-space: pre-line; }
+  .ev.now { background: var(--now); border-color: var(--now-line); }
+  .ev.cancelled .title { text-decoration: line-through; color: var(--cancel); }
+  .lunch { background: var(--lunch); border: 1px dashed var(--lunch-line); border-radius: 10px; padding: 8px 10px; font-weight: 600; }
+  .muted { color: var(--muted); }
+  .empty { padding: 18px 8px; text-align: center; color: var(--muted); }
+  .banner { background: var(--lunch); border: 1px solid var(--lunch-line); border-radius: 12px; padding: 12px; margin-bottom: 12px; font-weight: 600; }
+  .people { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .people h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .people p { margin: 4px 0; }
+  .tag { display: inline-block; background: var(--chip); border-radius: 6px; padding: 0 7px; font-size: .85rem; }
+  .err { color: var(--cancel); }
+  .del { border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 4px 10px; font-size: .85rem; color: var(--muted); }
+  dialog { border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--text); padding: 20px; width: min(480px, 92vw); }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  label { display: block; font-weight: 600; margin: 12px 0 4px; }
+  input { width: 100%; font: inherit; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .primary { background: var(--accent); color: var(--accent-text); border: 0; border-radius: 10px; padding: 9px 16px; font-weight: 600; }
+  .secondary { background: transparent; border: 1px solid var(--line); border-radius: 10px; padding: 9px 16px; }
+  .hint { font-size: .85rem; color: var(--muted); margin-top: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>📅 EDT commun</h1>
+  <div class="chips" id="chips"></div>
+
+  <div class="bar">
+    <div class="tabs" id="tabs"></div>
+    <div class="nav" id="nav"></div>
+  </div>
+
+  <div id="content"></div>
+</main>
+
+<dialog id="dlg">
+  <form method="dialog" id="form">
+    <h2 style="margin:0">Ajouter mon emploi du temps</h2>
+    <label for="f-name">Ton prénom</label>
+    <input id="f-name" maxlength="30" required autocomplete="off">
+    <label for="f-url">Ton lien iCal EcoleDirecte</label>
+    <input id="f-url" required autocomplete="off" placeholder="https://api.ecoledirecte.com/v3/ical/...">
+    <p class="hint">Le lien reste sur le serveur : personne ne le voit, les autres ne voient que ton emploi du temps.</p>
+    <p class="err" id="f-err"></p>
+    <div class="row">
+      <button type="button" class="secondary" id="f-cancel">Annuler</button>
+      <button type="submit" class="primary" id="f-ok">Ajouter</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/* ---------- état ---------- */
+const pad = (n) => String(n).padStart(2, '0');
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseYmd = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (s, n) => { const d = parseYmd(s); d.setDate(d.getDate() + n); return ymd(d); };
+const monday = (s) => addDays(s, -((parseYmd(s).getDay() + 6) % 7));
+const fmtLong = (s) => parseYmd(s).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+const hm = (min) => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
+const isoMin = (iso) => Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
+const dur = (min) => (min >= 60 ? `${Math.floor(min / 60)} h${min % 60 ? ' ' + pad(min % 60) : ''}` : `${min} min`);
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+const state = {
+  people: [],
+  selected: store.get('edt_selected', null),
+  view: store.get('edt_view', 'jour'),
+  date: ymd(new Date()),
+  mine: store.get('edt_mine', {}), // { id: editToken }
+};
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `Erreur ${r.status}`);
+  return j;
+}
+
+/* ---------- rendu : en-tête ---------- */
+function renderChips() {
+  const el = $('#chips');
+  el.innerHTML = '';
+  for (const p of state.people) {
+    const b = document.createElement('button');
+    b.className = 'chip' + (p.id === state.selected ? ' active' : '');
+    b.textContent = p.name;
+    b.onclick = () => { state.selected = p.id; store.set('edt_selected', p.id); if (state.view === 'midi') state.view = 'jour'; refresh(); };
+    el.appendChild(b);
+  }
+  const add = document.createElement('button');
+  add.className = 'chip add';
+  add.textContent = '+ Ajouter mon EDT';
+  add.onclick = openDialog;
+  el.appendChild(add);
+}
+
+function renderBar() {
+  const tabs = $('#tabs');
+  tabs.innerHTML = '';
+  [['jour', 'Jour'], ['semaine', 'Semaine'], ['midi', '🍽️ Pause midi']].forEach(([k, label]) => {
+    const b = document.createElement('button');
+    b.className = 'tab' + (state.view === k ? ' active' : '');
+    b.textContent = label;
+    b.onclick = () => { state.view = k; store.set('edt_view', k); refresh(); };
+    tabs.appendChild(b);
+  });
+  const step = state.view === 'semaine' ? 7 : 1;
+  const nav = $('#nav');
+  nav.innerHTML = '';
+  const mk = (txt, fn, cls) => { const b = document.createElement('button'); b.textContent = txt; b.onclick = fn; if (cls) b.className = cls; nav.appendChild(b); return b; };
+  mk('◀', () => { state.date = addDays(state.date, -step); refresh(); });
+  const label = document.createElement('span');
+  label.className = 'date';
+  label.textContent = state.view === 'semaine'
+    ? `Semaine du ${parseYmd(monday(state.date)).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`
+    : fmtLong(state.date);
+  nav.appendChild(label);
+  mk('▶', () => { state.date = addDays(state.date, step); refresh(); });
+  mk('Aujourd\'hui', () => { state.date = ymd(new Date()); refresh(); });
+}
+
+/* ---------- rendu : emploi du temps ---------- */
+function dayCard(date, events, lunch) {
+  const today = ymd(new Date());
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const items = events.map((e) => ({ ...e, type: 'ev' }));
+  if (lunch && lunch.status === 'break') items.push({ type: 'lunch', start: `${date}T${hm(lunch.start)}`, lunch });
+  items.sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+
+  let html = '';
+  for (const it of items) {
+    if (it.type === 'lunch') {
+      html += `<div class="lunch">🍽️ Pause midi · ${hm(it.lunch.start)} – ${hm(it.lunch.end)} <span class="muted">(${dur(it.lunch.end - it.lunch.start)})</span></div>`;
+      continue;
+    }
+    const time = it.allDay ? 'Journée' : `${it.start.slice(11, 16)} – ${it.end.slice(11, 16)}`;
+    const now = date === today && !it.allDay && !it.cancelled && nowMin >= isoMin(it.start) && nowMin < isoMin(it.end);
+    html += `<div class="ev${now ? ' now' : ''}${it.cancelled ? ' cancelled' : ''}">
+      <div class="time">${esc(time)}</div>
+      <div><div class="title">${esc(it.summary)}${it.cancelled ? ' <span class="tag">annulé</span>' : ''}</div>
+      ${it.location ? `<span class="room">📍 ${esc(it.location)}</span>` : ''}
+      ${it.description ? `<div class="desc">${esc(it.description)}</div>` : ''}</div>
+    </div>`;
+  }
+  if (!html) html = '<div class="empty">Pas de cours 🎉</div>';
+  return html;
+}
+
+async function renderSchedule() {
+  const person = state.people.find((p) => p.id === state.selected);
+  if (!person) {
+    $('#content').innerHTML = '<div class="card empty">Choisis quelqu\'un ci-dessus, ou ajoute ton emploi du temps.</div>';
+    return;
+  }
+  const week = state.view === 'semaine';
+  const from = week ? monday(state.date) : state.date;
+  const to = week ? addDays(from, 6) : state.date;
+  $('#content').innerHTML = '<div class="card empty">Chargement…</div>';
+  let data;
+  try {
+    data = await api(`/api/schedule/${person.id}?from=${from}&to=${to}`);
+  } catch (e) {
+    $('#content').innerHTML = `<div class="card err">${esc(e.message)}</div>`;
+    return;
+  }
+  const del = state.mine[person.id]
+    ? `<p><button class="del" id="del">Supprimer mon EDT</button></p>` : '';
+
+  if (!week) {
+    $('#content').innerHTML = `<div class="card"><h2>${esc(person.name)} · ${esc(fmtLong(from))}</h2>${dayCard(from, data.events, data.lunch[from])}</div>${del}`;
+  } else {
+    let cards = '';
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(from, i);
+      const evs = data.events.filter((e) => e.start.slice(0, 10) === d);
+      if (i >= 5 && !evs.length) continue; // samedi / dimanche seulement s'il y a cours
+      cards += `<div class="card"><h2>${esc(fmtLong(d))}</h2>${dayCard(d, evs, data.lunch[d])}</div>`;
+    }
+    $('#content').innerHTML = `<div class="week">${cards}</div>${del}`;
+  }
+  const delBtn = $('#del');
+  if (delBtn) delBtn.onclick = () => removePerson(person);
+}
+
+/* ---------- rendu : pause midi ---------- */
+function statusText(r) {
+  const l = r.lunch;
+  const where = (c) => `${esc(c.summary)}${c.location ? ` <span class="tag">📍 ${esc(c.location)}</span>` : ''}`;
+  switch (l.status) {
+    case 'none': return '<p class="muted">Pas de cours ce jour-là</p>';
+    case 'nobreak': return '<p>Pas de vraie pause : il enchaîne 😬</p>';
+    case 'finished': return `<p>Journée finie à <b>${hm(l.before.end)}</b></p><p class="muted">Dernier cours : ${where(l.before)}</p>`;
+    case 'later': return `<p>Commence à <b>${hm(l.after.start)}</b></p><p class="muted">Premier cours : ${where(l.after)}</p>`;
+    default:
+      return `<p>🍽️ <b>${hm(l.start)} – ${hm(l.end)}</b> <span class="muted">(${dur(l.end - l.start)})</span></p>
+        <p class="muted">Avant : ${where(l.before)}</p><p class="muted">Après : ${where(l.after)}</p>`;
+  }
+}
+
+function nowLine(r) {
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const cur = r.events.find((e) => nowMin >= e.start && nowMin < e.end);
+  const next = r.events.filter((e) => e.start > nowMin).sort((a, b) => a.start - b.start)[0];
+  const room = (e) => (e.location ? ` <span class="tag">📍 ${esc(e.location)}</span>` : '');
+  if (cur) return `<p>▶ En cours : <b>${esc(cur.summary)}</b>${room(cur)} <span class="muted">jusqu'à ${hm(cur.end)}</span></p>`;
+  if (next) return `<p>⏭ Prochain : <b>${esc(next.summary)}</b>${room(next)} <span class="muted">à ${hm(next.start)}</span></p>`;
+  return '<p class="muted">Plus de cours aujourd\'hui</p>';
+}
+
+async function renderMidi() {
+  $('#content').innerHTML = '<div class="card empty">Chargement…</div>';
+  let rows;
+  try { rows = await api(`/api/lunch?date=${state.date}`); }
+  catch (e) { $('#content').innerHTML = `<div class="card err">${esc(e.message)}</div>`; return; }
+  if (!rows.length) { $('#content').innerHTML = '<div class="card empty">Personne n\'a encore ajouté son EDT.</div>'; return; }
+
+  const isToday = state.date === ymd(new Date());
+  const breaks = rows.filter((r) => r.lunch && r.lunch.status === 'break');
+  let banner = '';
+  if (breaks.length >= 2) {
+    const s = Math.max(...breaks.map((r) => r.lunch.start));
+    const e = Math.min(...breaks.map((r) => r.lunch.end));
+    banner = e - s >= 20
+      ? `<div class="banner">🎉 Créneau commun pour ${breaks.map((r) => esc(r.name)).join(', ')} : ${hm(s)} – ${hm(e)} (${dur(e - s)})</div>`
+      : '<div class="banner">😕 Pas de créneau commun pour manger tous ensemble ce jour-là</div>';
+  }
+
+  const cards = rows.map((r) => {
+    if (r.error) return `<div class="card"><h3>${esc(r.name)}</h3><p class="err">${esc(r.error)}</p></div>`;
+    return `<div class="card"><h3>${esc(r.name)}</h3>${statusText(r)}${isToday ? nowLine(r) : ''}</div>`;
+  }).join('');
+  $('#content').innerHTML = `${banner}<div class="people">${cards}</div>`;
+}
+
+/* ---------- ajout / suppression ---------- */
+function openDialog() { $('#f-err').textContent = ''; $('#dlg').showModal(); $('#f-name').focus(); }
+
+$('#f-cancel').onclick = () => $('#dlg').close();
+$('#form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const ok = $('#f-ok');
+  ok.disabled = true; ok.textContent = 'Vérification…';
+  $('#f-err').textContent = '';
+  try {
+    const p = await api('/api/people', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: $('#f-name').value, url: $('#f-url').value }),
+    });
+    state.mine[p.id] = p.editToken;
+    store.set('edt_mine', state.mine);
+    state.selected = p.id;
+    store.set('edt_selected', p.id);
+    $('#f-url').value = ''; $('#f-name').value = '';
+    $('#dlg').close();
+    await loadPeople();
+    refresh();
+  } catch (e) {
+    $('#f-err').textContent = e.message;
+  } finally {
+    ok.disabled = false; ok.textContent = 'Ajouter';
+  }
+});
+
+async function removePerson(p) {
+  if (!confirm(`Supprimer l'EDT de ${p.name} de l'app ?`)) return;
+  try {
+    await api(`/api/people/${p.id}`, { method: 'DELETE', headers: { 'x-edit-token': state.mine[p.id] } });
+    delete state.mine[p.id];
+    store.set('edt_mine', state.mine);
+    if (state.selected === p.id) state.selected = null;
+    await loadPeople();
+    refresh();
+  } catch (e) { alert(e.message); }
+}
+
+/* ---------- démarrage ---------- */
+async function loadPeople() {
+  state.people = await api('/api/people');
+  if (!state.people.some((p) => p.id === state.selected)) state.selected = state.people[0]?.id ?? null;
+}
+
+function refresh() {
+  renderChips();
+  renderBar();
+  return state.view === 'midi' ? renderMidi() : renderSchedule();
+}
+
+loadPeople().then(refresh).catch((e) => { $('#content').innerHTML = `<div class="card err">${esc(e.message)}</div>`; });
+</script>
+</body>
+</html>
