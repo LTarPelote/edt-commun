@@ -2,6 +2,11 @@
 // EDT commun : chacun ajoute son lien iCal EcoleDirecte, on choisit de qui on veut voir l'emploi du temps.
 // Aucune dépendance : Node 18+ suffit (node server.js).
 //
+// Stockage :
+//  - si UPSTASH_REDIS_REST_URL et UPSTASH_REDIS_REST_TOKEN sont définis, les emplois du temps sont gardés
+//    dans une base Upstash (gratuite) : ils survivent aux redémarrages de l'hébergeur ;
+//  - sinon, ils sont gardés dans le fichier data.json (pratique en local, mais effacé sur un hébergement gratuit).
+//
 // Sécurité :
 //  - les liens iCal (qui contiennent un jeton secret) restent sur le serveur, jamais renvoyés au navigateur ;
 //  - le serveur n'accepte que des liens https vers api.ecoledirecte.com (pas de SSRF) ;
@@ -22,10 +27,40 @@ const MAX_PEOPLE = 50;
 
 /* ------------------------------ stockage ------------------------------ */
 
+const REDIS_URL = (process.env.UPSTASH_REDIS_REST_URL || '').trim().replace(/\/+$/, '');
+const REDIS_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
+const REDIS_KEY = process.env.REDIS_KEY || 'edt-commun:people';
+const useRedis = Boolean(REDIS_URL && REDIS_TOKEN);
+
+async function redis(command) {
+  const res = await fetch(REDIS_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(command),
+    signal: AbortSignal.timeout(8000),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j.error) throw new Error(`Base de données : ${j.error || 'erreur ' + res.status}`);
+  return j.result;
+}
+
 let people = [];
-try { people = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { people = []; }
-function save() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(people, null, 2), { mode: 0o600 });
+
+// Au démarrage. Si la lecture échoue, on lève une erreur (et le serveur s'arrête) :
+// jamais question de démarrer « à vide » puis d'écraser les vraies données.
+async function load() {
+  if (useRedis) {
+    const raw = await redis(['GET', REDIS_KEY]);
+    people = raw ? JSON.parse(raw) : [];
+    return;
+  }
+  try { people = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { people = []; }
+}
+
+async function save() {
+  const json = JSON.stringify(people, null, 2);
+  if (useRedis) { await redis(['SET', REDIS_KEY, json]); return; }
+  fs.writeFileSync(DATA_FILE, json, { mode: 0o600 });
 }
 
 /* ------------------------------ iCal ------------------------------ */
@@ -203,7 +238,8 @@ async function handleApi(req, res, url) {
       editToken: crypto.randomBytes(16).toString('hex'),
     };
     people.push(person);
-    save();
+    try { await save(); }
+    catch (e) { people.pop(); throw new Error('Impossible d\'enregistrer pour le moment, réessaie dans un instant.'); }
     cache.set(person.id, { at: Date.now(), events });
     return send(res, 201, { ...publicPerson(person), editToken: person.editToken });
   }
@@ -215,9 +251,10 @@ async function handleApi(req, res, url) {
     if (!sameToken(req.headers['x-edit-token'], people[i].editToken)) {
       return send(res, 403, { error: 'Seule la personne qui a ajouté ce lien peut le supprimer.' });
     }
-    cache.delete(people[i].id);
-    people.splice(i, 1);
-    save();
+    const [removed] = people.splice(i, 1);
+    try { await save(); }
+    catch (e) { people.splice(i, 0, removed); throw new Error('Impossible d\'enregistrer pour le moment, réessaie dans un instant.'); }
+    cache.delete(removed.id);
     return send(res, 200, { ok: true });
   }
 
@@ -253,7 +290,7 @@ function serveStatic(req, res, url) {
   });
 }
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
@@ -262,4 +299,15 @@ http.createServer(async (req, res) => {
   } catch (e) {
     return send(res, 400, { error: e.message || 'Erreur.' });
   }
-}).listen(PORT, () => console.log(`EDT commun : http://localhost:${PORT}`));
+});
+
+load()
+  .then(() => server.listen(PORT, () => {
+    console.log(`EDT commun : http://localhost:${PORT}`);
+    console.log(`Stockage : ${useRedis ? 'base Upstash (persistant)' : 'fichier ' + DATA_FILE + ' (effacé sur un hébergement gratuit)'}`);
+    console.log(`${people.length} emploi(s) du temps chargé(s)`);
+  }))
+  .catch((e) => {
+    console.error('Impossible de lire les données, arrêt pour ne rien écraser :', e.message);
+    process.exit(1);
+  });
